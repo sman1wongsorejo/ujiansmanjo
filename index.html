@@ -471,14 +471,38 @@
 
     function tampilkanLoading(s, t) { document.getElementById('loadingText').innerText = t; document.getElementById('loading').style.display = s ? 'flex' : 'none'; }
 
-    document.addEventListener("visibilitychange", function() {
-      if (document.visibilityState === 'hidden' && document.getElementById('exam-section').style.display === 'block') {
-        let sv = JSON.parse(localStorage.getItem(sessionKey)); if(sv) {
-           sv.pelanggaran = (sv.pelanggaran || 0) + 1; localStorage.setItem(sessionKey, JSON.stringify(sv));
-           if (sv.pelanggaran >= 4) { alert("🚨 PELANGGARAN FATAL (4/4) 🚨\nSistem mendeteksi Anda keluar dari ujian 4 kali. Akses diblokir dan jawaban dikirim paksa."); clearInterval(interval); kirimData(true); } 
-           else { alert(`🚨 PERINGATAN ${sv.pelanggaran} / 4 🚨\nJangan buka aplikasi/tab lain! Ujian akan diblokir pada pelanggaran ke-4.`); tampilkanSoal(indeksSaatIni); }
+    // === SISTEM KEAMANAN & PELANGGARAN ===
+    function prosesPelanggaran(alasan) {
+      if (isSubmitting) return; // Abaikan jika sedang proses kirim data
+      
+      if (document.getElementById('exam-section').style.display === 'block') {
+        let sv = JSON.parse(localStorage.getItem(sessionKey)); 
+        if(sv) {
+           sv.pelanggaran = (sv.pelanggaran || 0) + 1; 
+           localStorage.setItem(sessionKey, JSON.stringify(sv));
+           
+           if (sv.pelanggaran >= 4) { 
+               alert("🚨 PELANGGARAN FATAL (4/4) 🚨\n" + alasan + "\nAkses diblokir dan jawaban dikirim paksa ke server."); 
+               clearInterval(interval); 
+               kirimData(true); 
+           } else { 
+               alert(`🚨 PERINGATAN ${sv.pelanggaran} / 4 🚨\nTerdeteksi: ${alasan}!\n\nSistem mengeluarkan Anda dari ujian. Silakan Login kembali untuk melanjutkan.`); 
+               location.reload(); // <--- INI KUNCINYA: Memaksa refresh kembali ke halaman awal
+           }
         }
       }
+    }
+
+    // 1. Deteksi Minimize, Pindah Tab, atau Tutup Layar
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === 'hidden') {
+         prosesPelanggaran("Meninggalkan tab ujian atau meminimalkan browser");
+      }
+    });
+
+    // 2. Deteksi Buka Aplikasi Melayang (Split Screen, Notifikasi WA, Pop-up)
+    window.addEventListener('blur', function() {
+       prosesPelanggaran("Membuka aplikasi melayang (Floating App) atau Split Screen");
     });
   </script>
 </body>
