@@ -312,6 +312,7 @@
   </div>
 
   <script>
+    <script>
     // --- ⬇️ GANTI URL DI BAWAH INI DENGAN URL API APPS SCRIPT ANDA ⬇️ ---
     const API_URL = "https://script.google.com/macros/s/AKfycbyNFC4OPsoO3WhT8Og7hoDTZY8kwnXmxhxWzrvCNwwQyCApDrSDoge3z7K15cdO70MmWQ/exec";
 
@@ -338,11 +339,9 @@
       const svgEyeClosed = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
       
       if(p.type === "password"){
-        p.type = "text"; 
-        container.innerHTML = svgEyeOpen;
+        p.type = "text"; container.innerHTML = svgEyeClosed;
       } else {
-        p.type = "password"; 
-        container.innerHTML = svgEyeClosed;
+        p.type = "password"; container.innerHTML = svgEyeOpen;
       } 
     }
 
@@ -366,17 +365,35 @@
       
       fetchAPI({ action: "login", nisn: nisn, password: pw, kodeUjian: kodeUjian }).then(res => {
           tampilkanLoading(false);
+          // Jika server menolak (karena sudah submit di pelanggaran ke 4 / selesai)
           if (res.error) { document.getElementById('pesan-error').innerText = res.error; document.getElementById('pesan-error').style.display = "block"; return; }
+          
           identitas = res.siswa; dataSoal = res.soal; durasi = res.durasi; sessionKey = `CBT_SMANJO_${identitas.nisn}_${kodeUjian}`;
           document.getElementById('dash-nama').innerText = identitas.nama; document.getElementById('dash-nisn').innerText = identitas.nisn; document.getElementById('dash-kelas').innerText = identitas.kelas; document.getElementById('dash-ujian').innerText = kodeUjian;
           
           let saved = localStorage.getItem(sessionKey); let btn = document.getElementById('btnMulaiExam'); let status = "baru"; let teksTombolAktif = "Ya, Saya Mengerti & Mulai";
+          
           if(saved) {
             let d = JSON.parse(saved); let pel = d.pelanggaran || 0;
-            if(pel >= 4) { localStorage.removeItem(sessionKey); document.getElementById('dash-status').innerHTML = "<span style='color:var(--accent); font-weight:800;'>Siap (Sesi Direset) ✅</span>"; status = "baru"; teksTombolAktif = "Ya, Saya Mengerti & Mulai"; }
-            else if(d.endTime > Date.now()) { document.getElementById('dash-status').innerHTML = `<span style='color:var(--warning); font-weight:800;'>Lanjut (${pel}/4) ⏳</span>`; status = "lanjut"; teksTombolAktif = "Lanjutkan Ujian"; }
-            else { document.getElementById('dash-status').innerHTML = "<span style='color:var(--danger); font-weight:800;'>Habis ❌</span>"; status = "habis"; btn.innerText = "Sesi Berakhir"; btn.disabled = true; }
-          } else { document.getElementById('dash-status').innerHTML = "<span style='color:var(--accent); font-weight:800;'>Siap ✅</span>"; }
+            jawabanSiswa = d.jawaban || {}; // Tarik jawaban yang sudah ada
+            
+            if(pel >= 4) { 
+                // Jika masih ada sisa pelanggaran 4 di memori lokal, blokir dan paksa kirim ulang (jaga-jaga gagal terkirim sebelumnya)
+                document.getElementById('dash-status').innerHTML = "<span style='color:var(--danger); font-weight:800;'>DIBLOKIR ❌ (Pelanggaran 4x)</span>"; 
+                status = "habis"; btn.innerText = "Hubungi Admin/Guru"; btn.disabled = true; 
+                kirimData(true);
+            }
+            else if(d.endTime > Date.now()) { 
+                document.getElementById('dash-status').innerHTML = `<span style='color:var(--warning); font-weight:800;'>Lanjut (Peringatan: ${pel}/4) ⏳</span>`; 
+                status = "lanjut"; teksTombolAktif = "Lanjutkan Ujian"; 
+            }
+            else { 
+                document.getElementById('dash-status').innerHTML = "<span style='color:var(--danger); font-weight:800;'>Waktu Habis ❌</span>"; 
+                status = "habis"; btn.innerText = "Sesi Berakhir"; btn.disabled = true; 
+            }
+          } else { 
+              document.getElementById('dash-status').innerHTML = "<span style='color:var(--accent); font-weight:800;'>Siap ✅</span>"; 
+          }
           
           if (status !== "habis") {
               btn.disabled = true; let waktuTunggu = 10; btn.innerText = `Harap baca aturan (${waktuTunggu}s)`;
@@ -390,8 +407,12 @@
 
     function mulaiKerjakan() {
       let saved = localStorage.getItem(sessionKey); let endT;
-      if(saved) { let d = JSON.parse(saved); jawabanSiswa = d.jawaban || {}; dataSoal = d.soal; if(d.pelanggaran >= 4) { kirimData(true); return; } endT = d.endTime;
-      } else { endT = Date.now() + (durasi * 60000); localStorage.setItem(sessionKey, JSON.stringify({endTime: endT, jawaban: {}, soal: dataSoal, pelanggaran: 0})); }
+      if(saved) { 
+          let d = JSON.parse(saved); jawabanSiswa = d.jawaban || {}; dataSoal = d.soal; 
+          if(d.pelanggaran >= 4) { kirimData(true); return; } endT = d.endTime;
+      } else { 
+          endT = Date.now() + (durasi * 60000); localStorage.setItem(sessionKey, JSON.stringify({endTime: endT, jawaban: {}, soal: dataSoal, pelanggaran: 0})); 
+      }
       document.getElementById('dashboard-section').style.display = 'none'; document.getElementById('exam-section').style.display = 'block'; document.getElementById('namaPeserta').innerText = identitas.nama;
       buatNav(); tampilkanSoal(indeksSaatIni); mulaiTimer(endT);
     }
@@ -461,9 +482,11 @@
       if (isSubmitting) return; isSubmitting = true; tampilkanLoading(true, "Merekam ke Server... 🚀");
       
       fetchAPI({ action: "submit", siswa: identitas, kodeUjian: kodeUjian, jawaban: jawabanSiswa }).then(res => {
-          isSubmitting = false; tampilkanLoading(false); localStorage.removeItem(sessionKey);
+          isSubmitting = false; tampilkanLoading(false); 
+          localStorage.removeItem(sessionKey); // Hapus jejak lokal setelah berhasil terkirim
+          
           document.getElementById('exam-section').style.display = 'none'; document.getElementById('dashboard-section').style.display = 'none'; document.getElementById('result-section').style.display = 'block';
-          if(paksa) { document.getElementById('judul-selesai').innerText = "AKSES DIBLOKIR!"; document.getElementById('judul-selesai').style.color = "var(--danger)"; document.getElementById('teks-selesai').innerText = "Sistem mendeteksi 4x pelanggaran kecurangan. Ujian dihentikan paksa."; }
+          if(paksa) { document.getElementById('judul-selesai').innerText = "AKSES DIBLOKIR!"; document.getElementById('judul-selesai').style.color = "var(--danger)"; document.getElementById('teks-selesai').innerText = "Anda melakukan 4x pelanggaran. Ujian dihentikan paksa."; }
       }).catch(err => {
           isSubmitting = false; tampilkanLoading(false); alert("Gagal mengirim! Pastikan sinyal stabil, lalu klik kumpulkan lagi.");
       });
@@ -471,10 +494,10 @@
 
     function tampilkanLoading(s, t) { document.getElementById('loadingText').innerText = t; document.getElementById('loading').style.display = s ? 'flex' : 'none'; }
 
-    // === SISTEM KEAMANAN & PELANGGARAN ===
+    // === SISTEM PELANGGARAN TERBARU (KICK & RE-LOGIN) ===
     function prosesPelanggaran(alasan) {
-      if (isSubmitting) return; // Abaikan jika sedang proses kirim data
-      
+      if (isSubmitting) return; 
+
       if (document.getElementById('exam-section').style.display === 'block') {
         let sv = JSON.parse(localStorage.getItem(sessionKey)); 
         if(sv) {
@@ -482,28 +505,27 @@
            localStorage.setItem(sessionKey, JSON.stringify(sv));
            
            if (sv.pelanggaran >= 4) { 
-               alert("🚨 PELANGGARAN FATAL (4/4) 🚨\n" + alasan + "\nAkses diblokir dan jawaban dikirim paksa ke server."); 
+               alert(`🚨 PELANGGARAN FATAL (4/4) 🚨\n\nTerdeteksi: ${alasan}\n\nAkses Anda DIBLOKIR! Jawaban dikirim paksa ke server.`); 
                clearInterval(interval); 
                kirimData(true); 
            } else { 
-               alert(`🚨 PERINGATAN ${sv.pelanggaran} / 4 🚨\nTerdeteksi: ${alasan}!\n\nSistem mengeluarkan Anda dari ujian. Silakan Login kembali untuk melanjutkan.`); 
-               location.reload(); // <--- INI KUNCINYA: Memaksa refresh kembali ke halaman awal
+               alert(`🚨 PERINGATAN ${sv.pelanggaran} / 4 🚨\n\nTerdeteksi: ${alasan}!\n\nSistem mengeluarkan Anda dari ujian. Silakan Login kembali untuk melanjutkan.`); 
+               location.reload(); // Paksa tendang ke halaman login
            }
         }
       }
     }
 
-    // 1. Deteksi Minimize, Pindah Tab, atau Tutup Layar
     document.addEventListener("visibilitychange", function() {
       if (document.visibilityState === 'hidden') {
-         prosesPelanggaran("Meninggalkan tab ujian atau meminimalkan browser");
+         prosesPelanggaran("Meninggalkan tab ujian / Keluar dari browser");
       }
     });
 
-    // 2. Deteksi Buka Aplikasi Melayang (Split Screen, Notifikasi WA, Pop-up)
     window.addEventListener('blur', function() {
-       prosesPelanggaran("Membuka aplikasi melayang (Floating App) atau Split Screen");
+       prosesPelanggaran("Membuka notifikasi, Floating App, atau Split Screen");
     });
+  </script>
   </script>
 </body>
 </html>
